@@ -251,8 +251,16 @@ class LocalSandbox(Sandbox):
 
     @cached_property
     def _mappings_by_local_specificity(self) -> list[PathMapping]:
-        """Mappings ordered longest-local-path-first (for reverse resolution)."""
-        return sorted(self.path_mappings, key=lambda m: len(m.local_path), reverse=True)
+        """Mappings ordered longest-resolved-local-path-first (for reverse resolution).
+
+        Reverse resolution matches against ``Path.resolve()``'d roots, so
+        specificity must use those lengths — not the unresolved ``local_path``
+        strings. A longer symlink/alias spelling of a parent mount would
+        otherwise outrank a nested child mount and map files to the wrong
+        container path.
+        """
+        resolved = self._resolved_local_paths
+        return sorted(self.path_mappings, key=lambda m: len(resolved[m]), reverse=True)
 
     def _is_read_only_path(self, resolved_path: str) -> bool:
         """Check if a resolved path is under a read-only mount.

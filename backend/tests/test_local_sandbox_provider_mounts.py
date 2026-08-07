@@ -526,6 +526,37 @@ class TestMultipleMounts:
         resolved = sandbox._reverse_resolve_path(str(target))
         assert resolved == str(target.resolve())
 
+    def test_reverse_resolve_prefers_resolved_path_specificity(self, tmp_path):
+        """A longer unresolved parent alias must not outrank a nested child mount.
+
+        Reverse resolution matches on resolved roots. Sorting by unresolved
+        ``local_path`` length lets a long symlink/alias spelling of the parent
+        win and map ``.../workspace/f.txt`` to ``/mnt/parent/workspace/...``
+        instead of the child mount ``/mnt/child/...``.
+        """
+        real_parent = tmp_path / "p"
+        child_dir = real_parent / "workspace"
+        child_dir.mkdir(parents=True)
+        target = child_dir / "f.txt"
+        target.write_text("x", encoding="utf-8")
+
+        alias_parent = tmp_path / ("alias_" + ("x" * 80))
+        _symlink_to(real_parent, alias_parent, target_is_directory=True)
+
+        assert len(str(alias_parent)) > len(str(child_dir))
+
+        sandbox = LocalSandbox(
+            "test",
+            [
+                PathMapping(container_path="/mnt/parent", local_path=str(alias_parent)),
+                PathMapping(container_path="/mnt/child", local_path=str(child_dir)),
+            ],
+        )
+
+        # Unresolved sort would prefer the longer alias; resolved sort prefers child.
+        assert sandbox._mappings_by_local_specificity[0].container_path == "/mnt/child"
+        assert sandbox._reverse_resolve_path(str(target)) == "/mnt/child/f.txt"
+
     def test_reverse_resolve_paths_in_output_supports_backslash_separator(self, tmp_path):
         mount_dir = tmp_path / "mount"
         mount_dir.mkdir()
